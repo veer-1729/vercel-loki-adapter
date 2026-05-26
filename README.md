@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vercel -> Grafana Loki Log Drain Adapter
 
-## Getting Started
+Minimal Next.js (App Router) endpoint that receives Vercel Log Drain NDJSON over HTTP POST and forwards it to Grafana Cloud Loki.
 
-First, run the development server:
+## Endpoint
+
+`POST /api/vercel-log-drain`
+
+Auth header:
+
+- `x-drain-token` (must match `VERCEL_DRAIN_TOKEN`)
+
+Drain setup verification:
+
+- This route automatically handles Vercel's `x-vercel-verify` header so the drain can be created/verified from the dashboard.
+
+## Environment variables
+
+Set these in `.env` (or in your hosting provider):
+
+- `VERCEL_DRAIN_TOKEN` - token checked against the `x-drain-token` request header
+- `GRAFANA_LOKI_PUSH_URL` - Grafana Cloud Loki push URL (e.g. `https://logs-prod-<region>.grafana.net/loki/api/v1/push`)
+- `GRAFANA_LOKI_USER` - Grafana Cloud Loki username/tenant id used for Basic Auth
+- `GRAFANA_CLOUD_TOKEN` - Grafana Cloud access policy token used for Basic Auth
+
+## Configure the Vercel Log Drain
+
+1. Create a Log Drain in the Vercel dashboard.
+2. Delivery format: `NDJSON`
+3. Destination URL: your deployed endpoint, e.g. `https://<your-domain>/api/vercel-log-drain`
+4. Custom header:
+   - Header name: `x-drain-token`
+   - Header value: your `VERCEL_DRAIN_TOKEN`
+
+## Local test
+
+1. Run:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Send one NDJSON log line:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+curl -X POST "http://localhost:3000/api/vercel-log-drain" \
+  -H "Content-Type: application/x-ndjson" \
+  -H "x-drain-token: $VERCEL_DRAIN_TOKEN" \
+  --data-binary $'{"id":"test","deploymentId":"dpl_test","source":"lambda","host":"test.vercel.app","timestamp":1573817187330,"projectId":"proj_test","projectName":"my-app","level":"info","message":"hello from vercel","requestId":"req_test","environment":"production","path":"/api/test","traceId":"trace_test","proxy":{"method":"GET","path":"/api/test","statusCode":200,"region":"sfo1","vercelCache":"MISS","wafAction":"log"}}\n'
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Expected:
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `200 ok` if Loki is reachable and your credentials are correct.
+- `401 unauthorized` if the token is wrong.
+- `500` with a Loki error body if the push fails.
